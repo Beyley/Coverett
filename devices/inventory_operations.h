@@ -65,6 +65,16 @@ result_t takeItems(device_t* device, int count, char* side);
  */
 result_t takeFrom(device_t* device, int into, int count, char* side);
 
+/**
+ * @brief      Gets a list of items from a container (e.g. chest)
+ *
+ * @param[in]  device  Pointer to device proxy (device_t structure).
+ * @param[in]  side    Name of the side, where the items will be pulled.
+ *
+ * @return     result_t structure with the type of CO_NUMBER or CO_ERROR.
+ */
+result_t getItems(device_t* device, char* side);
+
 #ifdef __cplusplus
 }
 #endif

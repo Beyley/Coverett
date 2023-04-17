@@ -72,6 +72,12 @@ pub fn build(b: *std.Build) !void {
     seplay.linkLibC();
     seplay.addCSourceFiles(seplay_srcs, &.{});
     b.installArtifact(seplay);
+
+    var lsitems: *std.Build.CompileStep = b.addExecutable(.{ .name = "lsitems", .target = target, .optimize = optimize });
+    lsitems.linkLibrary(static_coverett);
+    lsitems.linkLibC();
+    lsitems.addCSourceFiles(lsitems_srcs, &.{});
+    b.installArtifact(lsitems);
 }
 
 const coverett_srcs = &.{
@@ -105,6 +111,10 @@ const redstone_srcs = &.{
 
 const seplay_srcs = &.{
     root_path ++ "seplay.c",
+};
+
+const lsitems_srcs = &.{
+    root_path ++ "lsitems.c",
 };
 
 const cjson_srcs = &.{
