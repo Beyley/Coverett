@@ -65,3 +65,19 @@ result_t takeItems(device_t* device, int count, char* side){
 result_t takeFrom(device_t* device, int into, int count, char* side){
 	return commonInFr(device, into, count, side, "takeFrom");
 }
+
+result_t getItems(device_t* device, char* side) {
+	if (!isInvOp(device)) return IOINC;
+	if (side == NULL){
+		uniInvoke(device, "getItems", NULL, NULL, 0, NULL);
+	}
+
+	cotypes_t packord[] = {CO_STRING};
+	char* strparams[] = {side};
+	result_t res = uniInvoke(device, "getItems", NULL, strparams, 1, packord);
+	if (res.type == CO_ERROR && strcmp(res.errString, "IllegalArgumentException") == 0){
+		free(res.errString);
+		res.errString = "Incorrect side";
+	}
+	return res;
+}
