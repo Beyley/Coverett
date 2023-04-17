@@ -4,6 +4,12 @@
 
 int main(void){
 	bus_t stdbus = openBus("/dev/hvc0");
+
+	if(stdbus == NULL) {
+		fputs("Failed to open bus.\n", stderr);
+		return -1;
+	}
+
 	list_t devlist = getList(stdbus);
 	
 	int total;

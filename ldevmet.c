@@ -9,6 +9,12 @@ int main(int argc, char* argv[]){
 	}
 
 	bus_t stdbus = openBus("/dev/hvc0");
+
+	if(stdbus == NULL) {
+		fputs("Failed to open bus.\n", stderr);
+		return -1;
+	}
+
 	device_t dev = findDev(stdbus, argv[1]);
 	if (!dev.exists){
 		fprintf(stderr, "Device \"%s\" is not found.\n", argv[1]);

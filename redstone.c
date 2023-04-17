@@ -10,6 +10,11 @@ int main(int argc, char* argv[]){
 		return 0;
 	}
 	bus_t stdbus = openBus("/dev/hvc0");
+
+	if(stdbus == NULL) {
+		fputs("Failed to open bus.\n", stderr);
+		return -1;
+	}
 	
 	device_t dev = findDev(stdbus, "redstone");
 	if (!dev.exists){
