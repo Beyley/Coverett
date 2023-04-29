@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "coverett.h": "c",
+        "termios.h": "c",
+        "termios-c_cc.h": "c"
+    }
+}

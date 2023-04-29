@@ -33,6 +33,20 @@ pub fn createCoverett(b: *std.Build, target: CrossTarget, optimize: std.builtin.
     return coverett;
 }
 
+pub fn createZigguratt(b: *std.Build, target: CrossTarget, optimize: std.builtin.Mode, comptime shared: bool) *std.build.CompileStep {
+    const zigguratt_options = .{
+        .name = "zigguratt",
+        .optimize = optimize,
+        .target = target,
+        .root_source_file = .{ .path = "src/zigguratt.zig" },
+    };
+
+    const zigguratt: *std.build.CompileStep = if (shared) b.addSharedLibrary(zigguratt_options) else b.addStaticLibrary(zigguratt_options);
+    zigguratt.linkLibC();
+
+    return zigguratt;
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -42,6 +56,13 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(static_coverett);
     //Install a shared library version of coverett
     b.installArtifact(createCoverett(b, target, optimize, true));
+
+    var zigguratt = createZigguratt(b, target, optimize, false);
+    b.installArtifact(zigguratt);
+
+    var zimexu: *std.Build.CompileStep = b.addExecutable(std.build.ExecutableOptions{ .name = "zimexu", .target = target, .optimize = optimize, .root_source_file = .{ .path = "src/zimexu.zig" } });
+    zimexu.linkLibC();
+    b.installArtifact(zimexu);
 
     var fimexu: *std.Build.CompileStep = b.addExecutable(.{ .name = "fimexu", .target = target, .optimize = optimize });
     fimexu.linkLibrary(static_coverett);
