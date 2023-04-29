@@ -20,7 +20,7 @@ pub const Bus = struct {
         var parser = std.json.Parser.init(allocator, true);
         defer parser.deinit();
 
-        std.debug.print("requesting\n", .{});
+        // std.debug.print("requesting\n", .{});
         var ans = try self.request(allocator, &parser, "{\"type\":\"list\"}", "list", []const DeviceListElement);
 
         return ans;
@@ -30,22 +30,26 @@ pub const Bus = struct {
         var list = try bus.getList(allocator);
         defer std.json.parseFree(@TypeOf(list.parsed), list.parsed, list.parse_options);
 
-        for (list.parsed.data) |devicea| {
-            var device: DeviceListElement = devicea;
+        if (list.parsed.data) |parsed| {
+            for (parsed) |devicea| {
+                var device: DeviceListElement = devicea;
 
-            for (device.typeNames) |namea| {
-                var name: []const u8 = namea;
+                for (device.typeNames) |namea| {
+                    var name: []const u8 = namea;
 
-                if (std.mem.eql(u8, name, @tagName(device_type))) {
-                    return .{
-                        .bus = bus,
-                        .type = device_type,
-                        .name = try allocator.dupe(u8, name),
-                        .id = try allocator.dupe(u8, device.deviceId),
-                        .allocator = allocator,
-                    };
+                    if (std.mem.eql(u8, name, @tagName(device_type))) {
+                        return .{
+                            .bus = bus,
+                            .type = device_type,
+                            .name = try allocator.dupe(u8, name),
+                            .id = try allocator.dupe(u8, device.deviceId),
+                            .allocator = allocator,
+                        };
+                    }
                 }
             }
+        } else {
+            return error.MissingDataField;
         }
 
         return error.DeviceNotFound;
@@ -54,7 +58,7 @@ pub const Bus = struct {
     fn ResponseStruct(comptime DataType: type) type {
         return struct {
             type: []const u8,
-            data: DataType,
+            data: ?DataType = null,
         };
     }
 
@@ -67,7 +71,7 @@ pub const Bus = struct {
 
     ///Caller owns returned data
     pub fn request(self: Bus, allocator: std.mem.Allocator, parser: *std.json.Parser, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
-        std.debug.print("writing\n", .{});
+        // std.debug.print("writing\n", .{});
         //write the body to the file
         try self.writeData(body);
 
@@ -75,7 +79,7 @@ pub const Bus = struct {
             return error.ParserDoesNotCopyStrings;
         }
 
-        std.debug.print("reading\n", .{});
+        // std.debug.print("reading\n", .{});
 
         //Read the raw response
         var response_raw = try self.readData(allocator);
@@ -86,9 +90,11 @@ pub const Bus = struct {
 
         const ResponseType = ResponseStruct(DataType);
 
+        // std.debug.print("got response: {s}\n", .{response_raw});
+
         //The token stream of the response
         var tokens = std.json.TokenStream.init(response_raw);
-        std.debug.print("parsing\n", .{});
+        // std.debug.print("parsing\n", .{});
         //Parse the response
         var parsed: ResponseType = try std.json.parse(ResponseType, &tokens, parse_options);
 
@@ -165,18 +171,24 @@ pub const Device = struct {
     pub const InvokeDataParameter = union(enum) {
         number: usize,
         string: []const u8,
-        bytes: []const u8,
+        bytes: []f64, //byte arrays are serialized as an array of doubles, because.... JSON!!!
     };
 
     const InvokeData = struct {
         deviceId: []const u8,
         name: []const u8,
-        parameters: []InvokeDataParameter,
+        parameters: []const InvokeDataParameter,
     };
 
     const InvokeRequest = Request(InvokeData);
 
-    pub fn invoke(self: Device, allocator: std.mem.Allocator, method: []const u8, parameters: []InvokeDataParameter) !void {
+    pub fn invoke(
+        self: Device,
+        allocator: std.mem.Allocator,
+        method: []const u8,
+        parameters: []const InvokeDataParameter,
+        comptime ResponseDataType: type,
+    ) !Bus.RequestReturnType(ResponseDataType) {
         var request: InvokeRequest = InvokeRequest{
             .type = "invoke",
             .data = InvokeData{
@@ -194,11 +206,16 @@ pub const Device = struct {
         var stringified_request = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(stringified_request);
 
-        //Send the request to the FIEC, and get the response
-        var response = try self.bus.request(allocator, parser, stringified_request, "result");
-        defer response.deinit();
+        //Send the request to the device, and get the response
+        var response = try self.bus.request(
+            allocator,
+            &parser,
+            stringified_request,
+            "result",
+            ResponseDataType,
+        );
 
-        //TODO: handle the response here
+        return response;
     }
 };
 
