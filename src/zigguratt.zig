@@ -9,33 +9,39 @@ pub const Bus = struct {
         //Close the file
         self.file.close();
     }
-    ///Gets a list of all devices, caller owns returned ValueTree
-    pub fn getList(self: Bus, allocator: std.mem.Allocator) !std.json.ValueTree {
+
+    pub const DeviceListElement = struct {
+        deviceId: []const u8,
+        typeNames: []const []const u8,
+    };
+
+    ///Gets a list of all devices, caller owns returned value
+    pub fn getList(self: Bus, allocator: std.mem.Allocator) !RequestReturnType([]const DeviceListElement) {
         var parser = std.json.Parser.init(allocator, true);
         defer parser.deinit();
 
         std.debug.print("requesting\n", .{});
-        var ans = try self.request(allocator, &parser, "{\"type\":\"list\"}", "list");
+        var ans = try self.request(allocator, &parser, "{\"type\":\"list\"}", "list", []const DeviceListElement);
 
         return ans;
     }
+
     pub fn findDevice(bus: Bus, allocator: std.mem.Allocator, device_type: DeviceType) !Device {
         var list = try bus.getList(allocator);
-        defer list.deinit();
+        defer std.json.parseFree(@TypeOf(list.parsed), list.parsed, list.parse_options);
 
-        var data: std.json.Array = (list.root.Object.get("data") orelse unreachable).Array;
-        for (data.items) |itema| {
-            var item: std.json.Value = itema;
-            var typeNames: std.json.Array = (item.Object.get("typeNames") orelse return error.NoTypeNamesInJson).Array;
+        for (list.parsed.data) |devicea| {
+            var device: DeviceListElement = devicea;
 
-            for (typeNames.items) |namea| {
-                var name: std.json.Value = namea;
-                if (std.mem.eql(u8, name.String, @tagName(device_type))) {
+            for (device.typeNames) |namea| {
+                var name: []const u8 = namea;
+
+                if (std.mem.eql(u8, name, @tagName(device_type))) {
                     return .{
                         .bus = bus,
                         .type = device_type,
-                        .name = try allocator.dupe(u8, name.String),
-                        .id = try allocator.dupe(u8, (item.Object.get("deviceId") orelse return error.NoDeviceIdInJson).String),
+                        .name = try allocator.dupe(u8, name),
+                        .id = try allocator.dupe(u8, device.deviceId),
                         .allocator = allocator,
                     };
                 }
@@ -45,8 +51,22 @@ pub const Bus = struct {
         return error.DeviceNotFound;
     }
 
-    ///Caller owns returned ValueTree
-    pub fn request(self: Bus, allocator: std.mem.Allocator, parser: *std.json.Parser, body: []const u8, expected_response_type: []const u8) !std.json.ValueTree {
+    fn ResponseStruct(comptime DataType: type) type {
+        return struct {
+            type: []const u8,
+            data: DataType,
+        };
+    }
+
+    pub fn RequestReturnType(comptime DataType: type) type {
+        return struct {
+            parsed: ResponseStruct(DataType),
+            parse_options: std.json.ParseOptions,
+        };
+    }
+
+    ///Caller owns returned data
+    pub fn request(self: Bus, allocator: std.mem.Allocator, parser: *std.json.Parser, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
         std.debug.print("writing\n", .{});
         //write the body to the file
         try self.writeData(body);
@@ -56,30 +76,33 @@ pub const Bus = struct {
         }
 
         std.debug.print("reading\n", .{});
+
         //Read the raw response
         var response_raw = try self.readData(allocator);
         defer allocator.free(response_raw);
+
+        //The options to use when parsing
+        var parse_options: std.json.ParseOptions = .{ .allocator = allocator };
+
+        const ResponseType = ResponseStruct(DataType);
+
+        //The token stream of the response
+        var tokens = std.json.TokenStream.init(response_raw);
         std.debug.print("parsing\n", .{});
         //Parse the response
-        var response = try parser.parse(response_raw);
-
-        //Get the response type
-        var response_type_value: std.json.Value = response.root.Object.get("type") orelse return error.NoResponseType;
-        var response_type = response_type_value.String;
+        var parsed: ResponseType = try std.json.parse(ResponseType, &tokens, parse_options);
 
         //If its an error
-        if (std.mem.eql(u8, response_type, "error")) {
-            return error.GotErrorResponse;
+        if (std.mem.eql(u8, parsed.type, "error")) {
+            return error.ErrorResponse;
         }
 
         //If the type is wrong
-        if (!std.mem.eql(u8, expected_response_type, response_type)) {
-            return error.GotIncorrectResponseType;
+        if (!std.mem.eql(u8, expected_response_type, parsed.type)) {
+            return error.IncorrectResponseType;
         }
 
-        if (response.root.Object.get("data") == null) return error.NoResponseData;
-
-        return response;
+        return .{ .parsed = parsed, .parse_options = parse_options };
     }
     fn writeData(self: Bus, body: []const u8) !void {
         var writer = self.file.writer();
