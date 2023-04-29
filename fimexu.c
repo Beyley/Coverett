@@ -138,7 +138,7 @@ int main(int argc, char* argv[]){
 				}
 				free(data.retString);
 				recv += (size_t)data.retNumber;
-				printf("\rImporting... %.2f%% (%d/%d bytes)", (double)(recv * 100) / fil.size, recv, fil.size);
+				printf("\rImporting... %d%% (%d/%d bytes)", (100 * recv) / fil.size, recv, fil.size);
 				fflush(stdout);
 				data = readImportFile(&dev);
 			}
