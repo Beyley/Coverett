@@ -17,6 +17,9 @@ pub const Bus = struct {
 
     ///Gets a list of all devices, caller owns returned value
     pub fn getList(self: Bus, allocator: std.mem.Allocator) !RequestReturnType([]const DeviceListElement) {
+        var section = beginProfileSection(@src());
+        defer section.endProfileSection();
+
         var parser = std.json.Parser.init(allocator, true);
         defer parser.deinit();
 
@@ -27,6 +30,9 @@ pub const Bus = struct {
     }
 
     pub fn findDevice(bus: Bus, allocator: std.mem.Allocator, device_type: DeviceType) !Device {
+        var section = beginProfileSection(@src());
+        defer section.endProfileSection();
+
         var list = try bus.getList(allocator);
         defer std.json.parseFree(@TypeOf(list.parsed), list.parsed, list.parse_options);
 
@@ -71,6 +77,8 @@ pub const Bus = struct {
 
     ///Caller owns returned data
     pub fn request(self: Bus, allocator: std.mem.Allocator, parser: *std.json.Parser, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
+        var section = beginProfileSection(@src());
+        defer section.endProfileSection();
         // std.debug.print("writing\n", .{});
         //write the body to the file
         try self.writeData(body);
@@ -90,13 +98,13 @@ pub const Bus = struct {
 
         const ResponseType = ResponseStruct(DataType);
 
-        // std.debug.print("got response: {s}\n", .{response_raw});
+        // std.debug.print("got response: {s} parsing it as {s}\n", .{ response_raw, @typeName(DataType) });
 
         //The token stream of the response
         var tokens = std.json.TokenStream.init(response_raw);
-        // std.debug.print("parsing\n", .{});
         //Parse the response
         var parsed: ResponseType = try std.json.parse(ResponseType, &tokens, parse_options);
+        errdefer std.json.parseFree(ResponseType, parsed, parse_options);
 
         //If its an error
         if (std.mem.eql(u8, parsed.type, "error")) {
@@ -119,37 +127,59 @@ pub const Bus = struct {
     }
     ///Reads data from the bus, caller owns returned memory
     fn readData(self: Bus, allocator: std.mem.Allocator) ![]const u8 {
+        var section = beginProfileSection(@src());
+        defer section.endProfileSection();
+
         var reader = self.file.reader();
 
-        if (try reader.readByte() == 0) {
-            var len: usize = 0;
-            var capacity: usize = 1024;
-            var result = try allocator.alloc(u8, capacity);
-
-            var b: u8 = try reader.readByte();
-            while (b != 0) {
-                result[len] = b;
-                len += 1;
-
-                if (len >= capacity) {
-                    capacity += 1024;
-                    //Allocate a new array
-                    var new = try allocator.alloc(u8, 1024);
-                    //Copy the old data into the new array
-                    std.mem.copy(u8, new, result);
-                    //Free the old data
-                    allocator.free(result);
-                    result = new;
+        var searching_for_header = true;
+        while (searching_for_header) {
+            var b = reader.readByte() catch |err| {
+                if (err != error.WouldBlock) {
+                    return err;
                 }
 
-                b = try reader.readByte();
-            }
+                continue;
+            };
 
-            return result[0..len];
+            if (b == 0) {
+                searching_for_header = false;
+            }
         }
 
-        //if no data was read, return 0
-        return &.{};
+        //read the header null byte
+        var capacity: usize = 2048;
+
+        //Init a new list
+        var result = std.ArrayList(u8).init(allocator);
+        //ensure it can store 2048 bytes
+        try result.ensureTotalCapacity(capacity);
+
+        var end_found: bool = false;
+        while (!end_found) {
+            //ensure there is at least 2048 bytes available in the buffer
+            try result.ensureUnusedCapacity(capacity);
+
+            //read as many bytes as possible into the buffer
+            var read: usize = reader.read(result.allocatedSlice()[result.items.len..]) catch |err| {
+                if (!std.mem.eql(u8, @errorName(err), "WouldBlock"))
+                    return err;
+
+                //If we would block
+                continue;
+            };
+
+            try result.resize(result.items.len + read);
+
+            //If the last byte in the array is a null byte, then we have reached the end
+            if (result.items[result.items.len - 1] == 0) {
+                end_found = true;
+                //Remove the null byte from the end of the list
+                result.items.len -= 1;
+            }
+        }
+
+        return result.toOwnedSlice();
     }
 };
 
@@ -189,6 +219,9 @@ pub const Device = struct {
         parameters: []const InvokeDataParameter,
         comptime ResponseDataType: type,
     ) !Bus.RequestReturnType(ResponseDataType) {
+        var section = beginProfileSection(@src());
+        defer section.endProfileSection();
+
         var request: InvokeRequest = InvokeRequest{
             .type = "invoke",
             .data = InvokeData{
@@ -227,10 +260,22 @@ fn Request(comptime DataType: type) type {
 }
 
 pub fn openBus() !Bus {
+    var section = beginProfileSection(@src());
+    defer section.endProfileSection();
+
     var bus: Bus = undefined;
 
     var file = try fs.openFileAbsolute("/dev/hvc0", .{ .mode = .read_write });
     errdefer file.close();
+
+    _ = std.os.linux.fcntl(
+        file.handle,
+        @intCast(i32, std.os.F.SETFL),
+        @intCast(
+            usize,
+            std.os.linux.fcntl(file.handle, @intCast(i32, std.os.F.GETFL), @intCast(usize, 0)) | @intCast(usize, std.os.O.NONBLOCK),
+        ),
+    );
 
     var termios: c.termios = undefined;
     if (c.tcgetattr(file.handle, &termios) != 0) return error.FailedToGetTerminalAttributes;
@@ -240,4 +285,22 @@ pub fn openBus() !Bus {
     bus.file = file;
 
     return bus;
+}
+
+pub const ProfileSection = struct {
+    name: []const u8,
+    start: i64,
+    pub fn endProfileSection(self: ProfileSection) void {
+        _ = self;
+        //uncomment to enable profiling
+        // std.debug.print("Profile {s} took {d}ms\n", .{ self.name, std.time.milliTimestamp() - self.start });
+    }
+};
+
+pub fn beginProfileSection(comptime file: std.builtin.SourceLocation) ProfileSection {
+    return .{ .name = file.fn_name, .start = std.time.milliTimestamp() };
+}
+
+pub fn beginProfileSectionManual(comptime name: []const u8) ProfileSection {
+    return .{ .name = name, .start = std.time.milliTimestamp() };
 }

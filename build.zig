@@ -60,7 +60,12 @@ pub fn build(b: *std.Build) !void {
     var zigguratt = createZigguratt(b, target, optimize, false);
     b.installArtifact(zigguratt);
 
-    var zimexu: *std.Build.CompileStep = b.addExecutable(std.build.ExecutableOptions{ .name = "zimexu", .target = target, .optimize = optimize, .root_source_file = .{ .path = "src/zimexu.zig" } });
+    var zimexu: *std.Build.CompileStep = b.addExecutable(std.build.ExecutableOptions{
+        .name = "zimexu",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = .{ .path = "src/zimexu.zig" },
+    });
     zimexu.linkLibC();
     b.installArtifact(zimexu);
 
