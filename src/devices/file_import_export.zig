@@ -66,6 +66,7 @@ pub const BeginFileImportErrors = error{
     InvalidState,
 };
 
+///Begins a file import, caller owns returned memory
 pub fn beginFileImport(self: FileImportExport, allocator: std.mem.Allocator) !FileInfo {
     const ResponseData = union(enum) {
         error_string: []const u8,
@@ -96,4 +97,21 @@ pub fn beginFileImport(self: FileImportExport, allocator: std.mem.Allocator) !Fi
     }
 
     unreachable;
+}
+
+///Reads data from a file import, returns an empty array if the file is done
+/// caller owns returned memory
+pub fn fileImportRead(self: FileImportExport, allocator: std.mem.Allocator) ![]const u8 {
+    var section = zigguratt.beginProfileSection(@src());
+    defer section.endProfileSection();
+
+    var response_data = try self.device.invoke(self.allocator, "readImportFile", &.{}, []const u8);
+    defer std.json.parseFree(@TypeOf(response_data.parsed), response_data.parsed, response_data.parse_options);
+
+    if (response_data.parsed.data) |data| {
+        return allocator.dupe(u8, data);
+    } else {
+        //If theres no data, return an empty array
+        return &.{};
+    }
 }

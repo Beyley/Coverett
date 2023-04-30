@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = std.fs;
 const zigguratt = @import("zigguratt.zig");
 
 const FileImportExport = @import("devices/file_import_export.zig");
@@ -19,7 +20,6 @@ pub fn main() !void {
     //Find the import/export card
     var device = try bus.findDevice(allocator, zigguratt.DeviceType.file_import_export);
     defer device.deinit();
-    // std.debug.print("found device id {s}, with type {s}\n", .{ device.id, @tagName(device.type) });
 
     //Create the card from the device
     var file_import_export = try FileImportExport.createFrom(device, allocator);
@@ -46,4 +46,32 @@ pub fn main() !void {
             file_info.deinit();
         }
     }
+
+    var file: fs.File = try fs.cwd().createFile(file_info.filename.?, .{});
+    defer file.close();
+
+    var full_data = try allocator.alloc(u8, file_info.size.?);
+    defer allocator.free(full_data);
+
+    var written: usize = 0;
+
+    var data: []const u8 = &.{0};
+    while (data.len != 0) {
+        data = try file_import_export.fileImportRead(allocator);
+        defer allocator.free(data);
+
+        @memcpy(full_data[written..].ptr, data.ptr, data.len);
+        written += data.len;
+        // try file.writeAll(data);
+        std.debug.print("Transferring... {d}/{d} ({d}%)\n", .{
+            // data.len,
+            written,
+            file_info.size.?,
+            written * 100 / file_info.size.?,
+        });
+    }
+
+    std.debug.print("Writing to disk...\n", .{});
+    try file.writeAll(full_data);
+    std.debug.print("All done!\n", .{});
 }
