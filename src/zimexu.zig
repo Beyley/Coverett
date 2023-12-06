@@ -11,7 +11,7 @@ pub fn main() !void {
         _ = gpa.detectLeaks();
         if (gpa.deinit() == .leak) @panic("memory leak!!!");
     }
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     //Open the bus
     var bus = try zigguratt.openBus();
@@ -60,7 +60,7 @@ pub fn main() !void {
         data = try file_import_export.fileImportRead(allocator);
         defer allocator.free(data);
 
-        @memcpy(full_data[written..].ptr, data.ptr, data.len);
+        @memcpy(full_data[written .. written + data.len], data);
         written += data.len;
         // try file.writeAll(data);
         std.debug.print("Transferring... {d}/{d} ({d}%)\n", .{

@@ -20,11 +20,9 @@ pub const Bus = struct {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
 
-        var parser = std.json.Parser.init(allocator, true);
-        defer parser.deinit();
-
         // std.debug.print("requesting\n", .{});
-        var ans = try self.request(allocator, &parser, "{\"type\":\"list\"}", "list", []const DeviceListElement);
+        const ans = try self.request(allocator, "{\"type\":\"list\"}", "list", []const DeviceListElement);
+        // std.debug.print("ans: {}\n", .{ans});
 
         return ans;
     }
@@ -33,15 +31,17 @@ pub const Bus = struct {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
 
-        var list = try bus.getList(allocator);
-        defer std.json.parseFree(@TypeOf(list.parsed), list.parsed, list.parse_options);
+        const list = try bus.getList(allocator);
+        defer list.deinit();
 
-        if (list.parsed.data) |parsed| {
+        // std.debug.print("got list\n", .{});
+
+        if (list.value.data) |parsed| {
             for (parsed) |devicea| {
-                var device: DeviceListElement = devicea;
+                const device: DeviceListElement = devicea;
 
                 for (device.typeNames) |namea| {
-                    var name: []const u8 = namea;
+                    const name: []const u8 = namea;
 
                     if (std.mem.eql(u8, name, @tagName(device_type))) {
                         return .{
@@ -69,55 +69,52 @@ pub const Bus = struct {
     }
 
     pub fn RequestReturnType(comptime DataType: type) type {
-        return struct {
-            parsed: ResponseStruct(DataType),
-            parse_options: std.json.ParseOptions,
-        };
+        return std.json.Parsed(ResponseStruct(DataType));
     }
 
     ///Caller owns returned data
-    pub fn request(self: Bus, allocator: std.mem.Allocator, parser: *std.json.Parser, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
+    pub fn request(self: Bus, allocator: std.mem.Allocator, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
         // std.debug.print("writing\n", .{});
         //write the body to the file
         try self.writeData(body);
 
-        if (parser.copy_strings == false) {
-            return error.ParserDoesNotCopyStrings;
-        }
-
         // std.debug.print("reading\n", .{});
 
         //Read the raw response
-        var response_raw = try self.readData(allocator);
+        const response_raw = try self.readData(allocator);
         defer allocator.free(response_raw);
-
-        //The options to use when parsing
-        var parse_options: std.json.ParseOptions = .{ .allocator = allocator };
 
         const ResponseType = ResponseStruct(DataType);
 
-        // std.debug.print("got response: {s} parsing it as {s}\n", .{ response_raw, @typeName(DataType) });
+        // std.debug.print("got response: {s} parsing it as {s}\n", .{ response_raw, @typeName(ResponseType) });
 
-        //The token stream of the response
-        var tokens = std.json.TokenStream.init(response_raw);
         //Parse the response
-        var parsed: ResponseType = try std.json.parse(ResponseType, &tokens, parse_options);
-        errdefer std.json.parseFree(ResponseType, parsed, parse_options);
+        const parsed = try std.json.parseFromSlice(
+            ResponseType,
+            allocator,
+            response_raw,
+            .{
+                .allocate = .alloc_always,
+                .ignore_unknown_fields = true,
+            },
+        );
+        errdefer parsed.deinit();
 
         //If its an error
-        if (std.mem.eql(u8, parsed.type, "error")) {
+        if (std.mem.eql(u8, parsed.value.type, "error")) {
             return error.ErrorResponse;
         }
 
         //If the type is wrong
-        if (!std.mem.eql(u8, expected_response_type, parsed.type)) {
+        if (!std.mem.eql(u8, expected_response_type, parsed.value.type)) {
             return error.IncorrectResponseType;
         }
 
-        return .{ .parsed = parsed, .parse_options = parse_options };
+        return parsed;
     }
+
     fn writeData(self: Bus, body: []const u8) !void {
         var writer = self.file.writer();
 
@@ -130,11 +127,13 @@ pub const Bus = struct {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
 
+        // std.debug.print("reading...\n", .{});
+
         var reader = self.file.reader();
 
         var searching_for_header = true;
         while (searching_for_header) {
-            var b = reader.readByte() catch |err| {
+            const b = reader.readByte() catch |err| {
                 if (err != error.WouldBlock) {
                     return err;
                 }
@@ -148,7 +147,7 @@ pub const Bus = struct {
         }
 
         //read the header null byte
-        var capacity: usize = 2048;
+        const capacity: usize = 2048;
 
         //Init a new list
         var result = std.ArrayList(u8).init(allocator);
@@ -161,7 +160,7 @@ pub const Bus = struct {
             try result.ensureUnusedCapacity(capacity);
 
             //read as many bytes as possible into the buffer
-            var read: usize = reader.read(result.allocatedSlice()[result.items.len..]) catch |err| {
+            const read: usize = reader.read(result.allocatedSlice()[result.items.len..]) catch |err| {
                 if (!std.mem.eql(u8, @errorName(err), "WouldBlock"))
                     return err;
 
@@ -222,7 +221,7 @@ pub const Device = struct {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
 
-        var request: InvokeRequest = InvokeRequest{
+        const request: InvokeRequest = InvokeRequest{
             .type = "invoke",
             .data = InvokeData{
                 .deviceId = self.id,
@@ -231,18 +230,13 @@ pub const Device = struct {
             },
         };
 
-        //Create a JSON parser
-        var parser = std.json.Parser.init(allocator, true);
-        defer parser.deinit();
-
         //Turn the request into a JSON string
-        var stringified_request = try std.json.stringifyAlloc(allocator, request, .{});
+        const stringified_request = try std.json.stringifyAlloc(allocator, request, .{});
         defer allocator.free(stringified_request);
 
         //Send the request to the device, and get the response
-        var response = try self.bus.request(
+        const response = try self.bus.request(
             allocator,
-            &parser,
             stringified_request,
             "result",
             ResponseDataType,
@@ -270,17 +264,17 @@ pub fn openBus() !Bus {
 
     _ = std.os.linux.fcntl(
         file.handle,
-        @intCast(i32, std.os.F.SETFL),
-        @intCast(
+        @as(i32, @intCast(std.os.F.SETFL)),
+        @as(
             usize,
-            std.os.linux.fcntl(file.handle, @intCast(i32, std.os.F.GETFL), @intCast(usize, 0)) | @intCast(usize, std.os.O.NONBLOCK),
+            @intCast(std.os.linux.fcntl(file.handle, @as(i32, @intCast(std.os.F.GETFL)), @as(usize, 0)) | @as(usize, @intCast(std.os.O.NONBLOCK))),
         ),
     );
 
     var termios: c.termios = undefined;
     if (c.tcgetattr(file.handle, &termios) != 0) return error.FailedToGetTerminalAttributes;
     c.cfmakeraw(&termios);
-    if (c.tcsetattr(file.handle, @enumToInt(std.os.TCSA.NOW), &termios) != 0) return error.FailedToSetTerminalAttributes;
+    if (c.tcsetattr(file.handle, @intFromEnum(std.os.TCSA.NOW), &termios) != 0) return error.FailedToSetTerminalAttributes;
 
     bus.file = file;
 

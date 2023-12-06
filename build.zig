@@ -12,13 +12,13 @@ pub fn createCJson(b: *std.Build, target: CrossTarget, optimize: std.builtin.Mod
     const cjson: *std.build.CompileStep = if (shared) b.addSharedLibrary(cjson_options) else b.addStaticLibrary(cjson_options);
 
     cjson.linkLibC();
-    cjson.addCSourceFiles(cjson_srcs, &.{});
+    cjson.addCSourceFiles(.{ .files = cjson_srcs });
 
     return cjson;
 }
 
 pub fn createCoverett(b: *std.Build, target: CrossTarget, optimize: std.builtin.Mode, comptime shared: bool) *std.build.CompileStep {
-    var cjson = createCJson(b, target, optimize, false);
+    const cjson = createCJson(b, target, optimize, false);
 
     const coverett_options = .{
         .name = "coverett",
@@ -29,7 +29,7 @@ pub fn createCoverett(b: *std.Build, target: CrossTarget, optimize: std.builtin.
     const coverett: *std.build.CompileStep = if (shared) b.addSharedLibrary(coverett_options) else b.addStaticLibrary(coverett_options);
     coverett.linkLibC();
     coverett.linkLibrary(cjson);
-    coverett.addCSourceFiles(coverett_srcs, &.{});
+    coverett.addCSourceFiles(.{ .files = coverett_srcs });
     return coverett;
 }
 
@@ -51,13 +51,13 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    var static_coverett = createCoverett(b, target, optimize, false);
+    const static_coverett = createCoverett(b, target, optimize, false);
     //Install the static library version of coverett
     b.installArtifact(static_coverett);
     //Install a shared library version of coverett
     b.installArtifact(createCoverett(b, target, optimize, true));
 
-    var zigguratt = createZigguratt(b, target, optimize, false);
+    const zigguratt = createZigguratt(b, target, optimize, false);
     b.installArtifact(zigguratt);
 
     var zimexu: *std.Build.CompileStep = b.addExecutable(std.build.ExecutableOptions{
@@ -72,37 +72,37 @@ pub fn build(b: *std.Build) !void {
     var fimexu: *std.Build.CompileStep = b.addExecutable(.{ .name = "fimexu", .target = target, .optimize = optimize });
     fimexu.linkLibrary(static_coverett);
     fimexu.linkLibC();
-    fimexu.addCSourceFiles(fimexu_srcs, &.{});
+    fimexu.addCSourceFiles(.{ .files = fimexu_srcs });
     b.installArtifact(fimexu);
 
     var ldevmet: *std.Build.CompileStep = b.addExecutable(.{ .name = "ldevmet", .target = target, .optimize = optimize });
     ldevmet.linkLibrary(static_coverett);
     ldevmet.linkLibC();
-    ldevmet.addCSourceFiles(ldevmet_srcs, &.{});
+    ldevmet.addCSourceFiles(.{ .files = ldevmet_srcs });
     b.installArtifact(ldevmet);
 
     var lshldev: *std.Build.CompileStep = b.addExecutable(.{ .name = "lshldev", .target = target, .optimize = optimize });
     lshldev.linkLibrary(static_coverett);
     lshldev.linkLibC();
-    lshldev.addCSourceFiles(lshldev_srcs, &.{});
+    lshldev.addCSourceFiles(.{ .files = lshldev_srcs });
     b.installArtifact(lshldev);
 
     var redstone: *std.Build.CompileStep = b.addExecutable(.{ .name = "redstone", .target = target, .optimize = optimize });
     redstone.linkLibrary(static_coverett);
     redstone.linkLibC();
-    redstone.addCSourceFiles(redstone_srcs, &.{});
+    redstone.addCSourceFiles(.{ .files = redstone_srcs });
     b.installArtifact(redstone);
 
     var seplay: *std.Build.CompileStep = b.addExecutable(.{ .name = "seplay", .target = target, .optimize = optimize });
     seplay.linkLibrary(static_coverett);
     seplay.linkLibC();
-    seplay.addCSourceFiles(seplay_srcs, &.{});
+    seplay.addCSourceFiles(.{ .files = seplay_srcs });
     b.installArtifact(seplay);
 
     var lsitems: *std.Build.CompileStep = b.addExecutable(.{ .name = "lsitems", .target = target, .optimize = optimize });
     lsitems.linkLibrary(static_coverett);
     lsitems.linkLibC();
-    lsitems.addCSourceFiles(lsitems_srcs, &.{});
+    lsitems.addCSourceFiles(.{ .files = lsitems_srcs });
     b.installArtifact(lsitems);
 }
 

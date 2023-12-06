@@ -16,11 +16,11 @@ pub fn createFrom(device: zigguratt.Device, allocator: std.mem.Allocator) !FileI
 
 pub fn resetTransfer(self: FileImportExport) !void {
     //Invoke the reset method
-    var data = try self.device.invoke(self.allocator, "reset", &.{}, struct {});
-    defer std.json.parseFree(@TypeOf(data.parsed), data.parsed, data.parse_options);
+    const data = try self.device.invoke(self.allocator, "reset", &.{}, struct {});
+    defer data.deinit();
 
     //When the reset is successful, it never sends a `data` parameter, so if it does, something fishy is going on
-    if (data.parsed.data != null) {
+    if (data.value.data != null) {
         return error.InvalidResetResponse;
     }
 
@@ -28,10 +28,10 @@ pub fn resetTransfer(self: FileImportExport) !void {
 }
 
 pub fn requestFileImport(self: FileImportExport) !void {
-    var data = try self.device.invoke(self.allocator, "requestImportFile", &.{}, bool);
-    defer std.json.parseFree(@TypeOf(data.parsed), data.parsed, data.parse_options);
+    const data = try self.device.invoke(self.allocator, "requestImportFile", &.{}, bool);
+    defer data.deinit();
 
-    if (data.parsed.data) |response| {
+    if (data.value.data) |response| {
         if (!response) {
             return error.NoUsersPresent;
         }
@@ -66,20 +66,46 @@ pub const BeginFileImportErrors = error{
     InvalidState,
 };
 
+pub fn UnionParser(comptime T: type) type {
+    return struct {
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!T {
+            const json_value = try std.json.Value.jsonParse(allocator, source, options);
+            return try jsonParseFromValue(allocator, json_value, options);
+        }
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!T {
+            inline for (std.meta.fields(T)) |field| {
+                if (std.json.parseFromValueLeaky(field.type, allocator, source, options)) |result| {
+                    return @unionInit(T, field.name, result);
+                } else |_| {}
+            }
+            return error.Overflow;
+        }
+
+        pub fn jsonStringify(self: T, stream: anytype) @TypeOf(stream.*).Error!void {
+            switch (self) {
+                inline else => |value| try stream.write(value),
+            }
+        }
+    };
+}
+
 ///Begins a file import, caller owns returned memory
 pub fn beginFileImport(self: FileImportExport, allocator: std.mem.Allocator) !FileInfo {
     const ResponseData = union(enum) {
-        error_string: []const u8,
+        pub usingnamespace UnionParser(@This());
+
         file: struct {
             name: []const u8,
             size: usize,
         },
+        error_string: []const u8,
     };
 
-    var data = try self.device.invoke(self.allocator, "beginImportFile", &.{}, ResponseData);
-    defer std.json.parseFree(@TypeOf(data.parsed), data.parsed, data.parse_options);
+    const data = try self.device.invoke(self.allocator, "beginImportFile", &.{}, ResponseData);
+    defer data.deinit();
 
-    if (data.parsed.data) |parsed| {
+    if (data.value.data) |parsed| {
         switch (parsed) {
             .error_string => |error_string| {
                 if (std.mem.eql(u8, error_string, "import was canceled")) {
@@ -105,10 +131,10 @@ pub fn fileImportRead(self: FileImportExport, allocator: std.mem.Allocator) ![]c
     var section = zigguratt.beginProfileSection(@src());
     defer section.endProfileSection();
 
-    var response_data = try self.device.invoke(self.allocator, "readImportFile", &.{}, []const u8);
-    defer std.json.parseFree(@TypeOf(response_data.parsed), response_data.parsed, response_data.parse_options);
+    const response_data = try self.device.invoke(self.allocator, "readImportFile", &.{}, []const u8);
+    defer response_data.deinit();
 
-    if (response_data.parsed.data) |data| {
+    if (response_data.value.data) |data| {
         return allocator.dupe(u8, data);
     } else {
         //If theres no data, return an empty array
