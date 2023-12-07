@@ -63,7 +63,7 @@ pub fn main() !void {
         @memcpy(full_data[written .. written + data.len], data);
         written += data.len;
         // try file.writeAll(data);
-        std.debug.print("Transferring... {d}/{d} ({d}%)\n", .{
+        std.debug.print("Transferring... {d}/{d} ({d}%)\r", .{
             // data.len,
             written,
             file_info.size.?,
@@ -71,7 +71,7 @@ pub fn main() !void {
         });
     }
 
-    std.debug.print("Writing to disk...\n", .{});
+    std.debug.print("\nWriting to disk...\n", .{});
     try file.writeAll(full_data);
     std.debug.print("All done!\n", .{});
 }
