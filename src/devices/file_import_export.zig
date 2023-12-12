@@ -66,34 +66,10 @@ pub const BeginFileImportErrors = error{
     InvalidState,
 };
 
-pub fn UnionParser(comptime T: type) type {
-    return struct {
-        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!T {
-            const json_value = try std.json.Value.jsonParse(allocator, source, options);
-            return try jsonParseFromValue(allocator, json_value, options);
-        }
-
-        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!T {
-            inline for (std.meta.fields(T)) |field| {
-                if (std.json.parseFromValueLeaky(field.type, allocator, source, options)) |result| {
-                    return @unionInit(T, field.name, result);
-                } else |_| {}
-            }
-            return error.Overflow;
-        }
-
-        pub fn jsonStringify(self: T, stream: anytype) @TypeOf(stream.*).Error!void {
-            switch (self) {
-                inline else => |value| try stream.write(value),
-            }
-        }
-    };
-}
-
 ///Begins a file import, caller owns returned memory
 pub fn beginFileImport(self: FileImportExport, allocator: std.mem.Allocator) !FileInfo {
     const ResponseData = union(enum) {
-        pub usingnamespace UnionParser(@This());
+        pub usingnamespace zigguratt.UnionParser(@This());
 
         file: struct {
             name: []const u8,

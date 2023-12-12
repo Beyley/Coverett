@@ -3,6 +3,31 @@ const fs = std.fs;
 
 const c = @cImport(@cInclude("termios.h"));
 
+// https://github.com/zigtools/zls/blob/master/src/lsp.zig#L77-L99
+pub fn UnionParser(comptime T: type) type {
+    return struct {
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!T {
+            const json_value = try std.json.Value.jsonParse(allocator, source, options);
+            return try jsonParseFromValue(allocator, json_value, options);
+        }
+
+        pub fn jsonParseFromValue(allocator: std.mem.Allocator, source: std.json.Value, options: std.json.ParseOptions) std.json.ParseFromValueError!T {
+            inline for (std.meta.fields(T)) |field| {
+                if (std.json.parseFromValueLeaky(field.type, allocator, source, options)) |result| {
+                    return @unionInit(T, field.name, result);
+                } else |_| {}
+            }
+            return error.Overflow;
+        }
+
+        pub fn jsonStringify(self: T, stream: anytype) @TypeOf(stream.*).Error!void {
+            switch (self) {
+                inline else => |value| try stream.write(value),
+            }
+        }
+    };
+}
+
 pub const Bus = struct {
     file: fs.File,
     pub fn close(self: Bus) void {
@@ -37,12 +62,9 @@ pub const Bus = struct {
         // std.debug.print("got list\n", .{});
 
         if (list.value.data) |parsed| {
-            for (parsed) |devicea| {
-                const device: DeviceListElement = devicea;
-
-                for (device.typeNames) |namea| {
-                    const name: []const u8 = namea;
-
+            for (parsed) |device| {
+                for (device.typeNames) |name| {
+                    // std.debug.print("device name type: {s}\n", .{name});
                     if (std.mem.eql(u8, name, @tagName(device_type))) {
                         return .{
                             .bus = bus,
@@ -76,7 +98,7 @@ pub const Bus = struct {
     pub fn request(self: Bus, allocator: std.mem.Allocator, body: []const u8, expected_response_type: []const u8, comptime DataType: type) !RequestReturnType(DataType) {
         var section = beginProfileSection(@src());
         defer section.endProfileSection();
-        // std.debug.print("writing\n", .{});
+        // std.debug.print("writing {s}\n", .{body});
         //write the body to the file
         try self.writeData(body);
 
@@ -184,6 +206,7 @@ pub const Bus = struct {
 
 pub const DeviceType = enum {
     file_import_export,
+    redstone,
 };
 
 pub const Device = struct {
@@ -198,6 +221,8 @@ pub const Device = struct {
     }
 
     pub const InvokeDataParameter = union(enum) {
+        pub usingnamespace UnionParser(@This());
+
         number: usize,
         string: []const u8,
         bytes: []f64, //byte arrays are serialized as an array of doubles, because.... JSON!!!

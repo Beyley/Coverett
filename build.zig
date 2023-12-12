@@ -87,10 +87,18 @@ pub fn build(b: *std.Build) !void {
     lshldev.addCSourceFiles(.{ .files = lshldev_srcs });
     b.installArtifact(lshldev);
 
-    var redstone: *std.Build.CompileStep = b.addExecutable(.{ .name = "redstone", .target = target, .optimize = optimize });
-    redstone.linkLibrary(static_coverett);
+    // var redstone: *std.Build.CompileStep = b.addExecutable(.{ .name = "redstone", .target = target, .optimize = optimize });
+    // redstone.linkLibrary(static_coverett);
+    // redstone.linkLibC();
+    // redstone.addCSourceFiles(.{ .files = redstone_srcs });
+    // b.installArtifact(redstone);
+    var redstone = b.addExecutable(.{
+        .name = "redstone",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = .{ .path = "src/redstone.zig" },
+    });
     redstone.linkLibC();
-    redstone.addCSourceFiles(.{ .files = redstone_srcs });
     b.installArtifact(redstone);
 
     var seplay: *std.Build.CompileStep = b.addExecutable(.{ .name = "seplay", .target = target, .optimize = optimize });
