@@ -60,6 +60,8 @@ pub fn build(b: *std.Build) !void {
     const zigguratt = createZigguratt(b, target, optimize, false);
     b.installArtifact(zigguratt);
 
+    _ = b.addModule("ziggaratt", .{ .source_file = .{ .path = "src/zigguratt.zig" } });
+
     var zimexu: *std.Build.CompileStep = b.addExecutable(std.build.ExecutableOptions{
         .name = "zimexu",
         .target = target,

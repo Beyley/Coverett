@@ -3,6 +3,11 @@ const fs = std.fs;
 
 const c = @cImport(@cInclude("termios.h"));
 
+pub const Devices = struct {
+    pub const Redstone = @import("devices/redstone.zig");
+    pub const FileImportExport = @import("devices/file_import_export.zig");
+};
+
 // https://github.com/zigtools/zls/blob/master/src/lsp.zig#L77-L99
 pub fn UnionParser(comptime T: type) type {
     return struct {
